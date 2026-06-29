@@ -2,5 +2,74 @@
 title: "Analyzing US Births and Basketball Recruits"
 author: "Dhruva"
 format: html
+execute:
+  echo: false
 ---
 
+
+```{r}
+#| message: false
+library(tidyverse)
+library(readxl)
+```
+
+```{r}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+
+births_tibble <- read_excel("data/us_births_1994_2014.xlsx") |>
+  mutate(day_of_week = factor(day_of_week,
+                              levels = c("Sun", "Mon", "Tues", "Wed", "Thurs", "Fri", "Sat"),
+                              ordered = TRUE))
+
+summary(births_tibble[c("births", "year")])
+
+births_tibble |>
+  group_by(month, date_of_month) |>
+  summarize(avg_births = mean(births), .groups = "drop") |>
+  ggplot(aes(x = date_of_month, y = factor(month, levels = 12:1), fill = avg_births)) +
+  geom_tile()
+
+christmas_data <- births_tibble |>
+  filter(month == 12, date_of_month %in% c(20:25, 27:30)) |>
+  group_by(year) |>
+  summarize(
+    dec25_births = sum(births[date_of_month == 25]),
+    baseline_avg = mean(births[date_of_month %in% c(20:24, 27:30)]),
+    pct_of_baseline = dec25_births / baseline_avg * 100,
+    dec25_weekday = day_of_week[date_of_month == 25]
+  )
+
+summary(christmas_data)
+
+ggplot(christmas_data, aes(x = year, y = pct_of_baseline, color = dec25_weekday)) +
+  geom_line(color = "black") +
+  geom_point()
+
+births_model <- lm(births ~ factor(year) + factor(month) + day_of_week,
+                   data = births_tibble)
+
+summary(births_model)$r.squared
+
+births_adjusted <- births_tibble |>
+  mutate(pct_resid = residuals(births_model) / mean(births) * 100)
+
+calendar_resid <- births_adjusted |>
+  filter(!(month == 2 & date_of_month == 29)) |>
+  group_by(month, date_of_month) |>
+  summarize(mean_pct_resid = mean(pct_resid), .groups = "drop") |>
+  mutate(date = as.Date(paste(2001, month, date_of_month, sep = "-")))
+
+ggplot(calendar_resid, aes(x = date, y = mean_pct_resid)) +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  annotate("text", x = as.Date("2001-12-25"), y = min(calendar_resid$mean_pct_resid[calendar_resid$month == 12 & calendar_resid$date_of_month == 25]),
+           label = "Christmas", vjust = -0.5, size = 3) +
+  annotate("text", x = as.Date("2001-01-01"), y = min(calendar_resid$mean_pct_resid[calendar_resid$month == 1 & calendar_resid$date_of_month == 1]),
+           label = "New Year's Day", vjust = -0.5, size = 3) +
+  annotate("text", x = as.Date("2001-07-04"), y = min(calendar_resid$mean_pct_resid[calendar_resid$month == 7 & calendar_resid$date_of_month == 4]),
+           label = "July 4th", vjust = -0.5, size = 3) +
+  annotate("text", x = as.Date("2001-11-22"), y = min(calendar_resid$mean_pct_resid[calendar_resid$month == 11 & calendar_resid$date_of_month == 22]),
+           label = "Thanksgiving", vjust = -0.5, size = 3)
+```
